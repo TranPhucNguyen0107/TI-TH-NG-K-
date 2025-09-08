@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tính Cổ Phần</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+    />
+  </head>
+  <body>
+    <header>
+      <h1>Quản lý Cổ Phần</h1>
+      <button class="menu-toggle" aria-label="Toggle menu">
+        <i class="fas fa-bars"></i>
+      </button>
+      <button id="themeToggle"><i class="fas fa-moon"></i> Chế Độ</button>
+    </header>
+
+    <div class="container">
+      <aside class="sidebar">
+        <div class="controls">
+          <button id="addShareholderBtn">
+            <i class="fas fa-user-plus"></i> Thêm cổ đông
+          </button>
+          <button id="addMonthBtn">
+            <i class="fas fa-calendar-plus"></i> Thêm tháng
+          </button>
+          <button id="calcBtn">
+            <i class="fas fa-calculator"></i> Tính toán
+          </button>
+          <button id="exportBtn">
+            <i class="fas fa-file-export"></i> Xuất CSV
+          </button>
+          <button id="importBtn">
+            <i class="fas fa-file-import"></i> Import CSV
+          </button>
+          <button id="resetBtn">
+            <i class="fas fa-trash-alt"></i> Xóa toàn bộ
+          </button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="search-section">
+          <input type="text" id="searchInput" placeholder="Tìm kiếm năm/tháng/cổ đông...">
+        </section>
+        <section class="tables">
+          <h2>Bảng đóng góp (USDT)</h2>
+          <div class="table-container">
+            <table id="contributionTable">
+              <thead>
+                <tr id="headerRow">
+                  <th>Tháng - Năm</th>
+                  <th>Tổng(USD)</th>
+                  <th>Hành động</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h2>Tổng kết theo năm</h2>
+          <div class="table-container">
+            <table id="yearSummary">
+              <thead>
+                <tr id="yearHeader">
+                  <th>Năm</th>
+                  <th>Tổng cả năm</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="charts">
+          <h2>Biểu đồ</h2>
+          <div class="charts-container">
+            <div class="chart-wrapper">
+              <canvas id="pieChart"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="lineChart"></canvas>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Modal đổi tên cổ đông -->
+    <div id="renameModal" class="modal">
+      <div class="modal-content">
+        <h3>Đổi tên cổ đông</h3>
+        <input type="text" id="renameInput" />
+        <div class="modal-actions">
+          <button id="renameOk">OK</button>
+          <button id="renameCancel">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Import CSV -->
+    <div id="importModal" class="modal">
+      <div class="modal-content">
+        <h3>Import CSV</h3>
+        <input type="file" id="csvFile" accept=".csv" />
+        <div class="modal-actions">
+          <button id="importOk">Import</button>
+          <button id="importCancel">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
