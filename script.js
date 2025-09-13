@@ -1,3 +1,28 @@
+// script.js (module)
+
+// ====== Firebase (Firestore) setup ======
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc
+} from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
+
+// Dùng config của bạn (đã có trong HTML cũ)
+const firebaseConfig = {
+  apiKey: "AIzaSyCAjXNFPDeJsaSy5cwHTG2tUPWlzncuz60",
+  authDomain: "ti-company.firebaseapp.com",
+  projectId: "ti-company",
+  storageBucket: "ti-company.firebasestorage.app",
+  messagingSenderId: "582694112976",
+  appId: "1:582694112976:web:08588ec38b2e294efe18d5",
+  measurementId: "G-5JVYCWF4CS"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const shareDocRef = doc(db, "shares", "shareData"); // single document
+
 // ====== Biến toàn cục ======
 let shareholders = ["Người 1", "Người 2", "Người 3"];
 let pieChart, barChart, lineChart;
@@ -35,11 +60,24 @@ function formatPercentages(values) {
 }
 
 function getAllRowsData() {
-  return Array.from(document.querySelectorAll("#contributionTable tbody tr")).map(tr => ({
-    month: parseInt(tr.querySelector(".month-year").dataset.month),
-    year: parseInt(tr.querySelector(".month-year").dataset.year),
-    values: Array.from(tr.querySelectorAll("input[type='number']")).map(inp => parseFloat(inp.value) || 0)
-  }));
+  return Array.from(document.querySelectorAll("#contributionTable tbody tr")).map((tr) => {
+    const mmCell = tr.querySelector(".month-year");
+    const month = mmCell ? parseInt(mmCell.dataset.month) : NaN;
+    const year = mmCell ? parseInt(mmCell.dataset.year) : NaN;
+    const inputs = Array.from(tr.querySelectorAll("input[type='number']"));
+    const values = inputs.map((inp) => parseFloat(inp.value) || 0);
+    return { month, year, values };
+  });
+}
+
+function hexToRgba(hex, alpha = 1) {
+  hex = hex.replace("#", "");
+  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+  const bigint = parseInt(hex, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // ====== DOM Manipulation ======
@@ -105,6 +143,7 @@ function addRow() {
     year = cur.year;
   }
   tbody.appendChild(createRow(month, year));
+  calculateAll();
   saveData();
   tbody.scrollTop = tbody.scrollHeight;
 }
@@ -117,10 +156,11 @@ function calculateAll() {
     const inputs = row.querySelectorAll("input[type='number']");
     const values = Array.from(inputs).map((inp) => parseFloat(inp.value) || 0);
     const total = values.reduce((a, b) => a + b, 0);
-    row.querySelector(".total").innerText = total.toLocaleString();
+    const totalCell = row.querySelector(".total");
+    if (totalCell) totalCell.innerText = total.toLocaleString();
     const percents = formatPercentages(values);
     const shares = row.querySelectorAll(".share");
-    shares.forEach((s, i) => (s.innerText = percents[i]));
+    shares.forEach((s, i) => (s.innerText = percents[i] || "0%"));
     const year = parseInt(row.querySelector(".month-year").dataset.year);
     if (!summary[year]) {
       summary[year] = { totals: Array(shareholders.length).fill(0), total: 0 };
@@ -146,7 +186,7 @@ function calculateAll() {
     });
 
   updateCharts(summary);
-  saveData();
+  // saveData(); // optional: we call saveData after user actions
 }
 
 function updateCharts(summary) {
@@ -206,12 +246,13 @@ function updateCharts(summary) {
 
   // Line Chart
   if (lineChart) lineChart.destroy();
-  const allMonths = getAllRowsData().map(r => `Tháng ${r.month}-${r.year}`);
+  const rows = getAllRowsData();
+  const allMonths = rows.map(r => `Tháng ${r.month}-${r.year}`);
   const datasets = shareholders.map((name, i) => ({
     label: name,
-    data: allMonths.map((_, idx) => getAllRowsData()[idx].values[i]),
-    borderColor: chartColors[i],
-    backgroundColor: chartColors[i] + '20',
+    data: rows.map(r => r.values[i] || 0),
+    borderColor: chartColors[i % chartColors.length],
+    backgroundColor: hexToRgba(chartColors[i % chartColors.length], 0.2),
     tension: 0.1,
     fill: false
   }));
@@ -230,34 +271,75 @@ function updateCharts(summary) {
   });
 }
 
-// ====== Data Persistence ======
-function saveData() {
-  const data = { shareholders, rows: getAllRowsData().map(r => ({ month: r.month, year: r.year, values: r.values.map(v => v.toString()) })) };
-  localStorage.setItem("shareData", JSON.stringify(data));
+// ====== Data Persistence with Firestore ======
+async function saveData() {
+  const rows = getAllRowsData().map(r => ({
+    month: r.month,
+    year: r.year,
+    values: r.values.map(v => Number(v))
+  }));
+  const data = { shareholders, rows, updatedAt: Date.now() };
+  try {
+    await setDoc(shareDocRef, data);
+    showToast("✅ Dữ liệu đã lưu lên Firestore");
+  } catch (err) {
+    console.error("Lưu Firestore thất bại:", err);
+    showToast("❌ Lưu Firestore thất bại");
+  }
 }
 
-function loadData() {
-  const data = JSON.parse(localStorage.getItem("shareData"));
-  if (!data) return;
-  shareholders = data.shareholders;
-  updateHeader();
-  updateYearHeader();
-  const tbody = document.querySelector("#contributionTable tbody");
-  tbody.innerHTML = "";
-  data.rows.forEach((r) => {
-    const tr = createRow(r.month, r.year);
-    const inputs = tr.querySelectorAll("input[type='number']");
-    r.values.forEach((v, i) => (inputs[i].value = v));
-    tbody.appendChild(tr);
-  });
-  calculateAll();
+async function loadData() {
+  try {
+    const snap = await getDoc(shareDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data.shareholders) && data.shareholders.length > 0) {
+        shareholders = data.shareholders;
+      }
+      updateHeader();
+      updateYearHeader();
+      const tbody = document.querySelector("#contributionTable tbody");
+      tbody.innerHTML = "";
+      if (Array.isArray(data.rows)) {
+        data.rows.forEach((r) => {
+          const tr = createRow(r.month, r.year);
+          const inputs = tr.querySelectorAll("input[type='number']");
+          (r.values || []).forEach((v, i) => {
+            if (inputs[i]) inputs[i].value = v;
+          });
+          tbody.appendChild(tr);
+        });
+      }
+      // If no rows stored -> create a current month row
+      if (tbody.querySelectorAll("tr").length === 0) {
+        const cur = getCurrentMonthYear();
+        tbody.appendChild(createRow(cur.month, cur.year));
+      }
+      calculateAll();
+      showToast("📥 Đã tải dữ liệu từ Firestore");
+    } else {
+      // No document yet -> create default doc from current UI state
+      updateHeader();
+      updateYearHeader();
+      const tbody = document.querySelector("#contributionTable tbody");
+      if (tbody.querySelectorAll("tr").length === 0) {
+        const cur = getCurrentMonthYear();
+        tbody.appendChild(createRow(cur.month, cur.year));
+      }
+      await saveData();
+      showToast("✨ Dữ liệu mặc định đã được tạo trên Firestore");
+    }
+  } catch (err) {
+    console.error("Tải Firestore thất bại:", err);
+    showToast("❌ Không thể tải dữ liệu từ Firestore");
+  }
 }
 
-// ====== Export/Import CSV ======
+// ====== Export/Import CSV (DOM-based) ======
 function exportCSV() {
-  const data = JSON.parse(localStorage.getItem("shareData"));
+  const rows = getAllRowsData();
   let csv = "Tháng-Năm," + shareholders.join(",") + ",Tổng\n";
-  data.rows.forEach(r => {
+  rows.forEach(r => {
     const values = r.values.map(v => parseFloat(v) || 0);
     csv += `Tháng ${r.month}-${r.year},${values.join(",")},${values.reduce((a,b)=>a+b,0)}\n`;
   });
@@ -270,83 +352,124 @@ function exportCSV() {
 
 function importCSV(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
-    const lines = e.target.result.split('\n').slice(1); // Bỏ header
-    const newRows = lines.map(line => {
-      const parts = line.split(',');
-      const monthYear = parts[0].split('-');
-      const month = parseInt(monthYear[0].replace('Tháng ', ''));
+  reader.onload = async (e) => {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length === 0) return;
+    // parse header
+    const headerParts = lines[0].split(",").map(h => h.trim());
+    // Expect header like: Tháng-Năm,Người1,Người2,...,Tổng
+    const importedShareholders = headerParts.slice(1, headerParts.length - 1);
+    if (importedShareholders.length > 0) {
+      shareholders = importedShareholders;
+      updateHeader();
+      updateYearHeader();
+    }
+    // parse rows
+    const newRows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",").map(p => p.trim());
+      const monthYear = parts[0].split("-");
+      const month = parseInt(monthYear[0].replace('Tháng ', '').trim());
       const year = parseInt(monthYear[1]);
-      const values = parts.slice(1, -1).map(v => v.toString());
-      return { month, year, values };
-    }).filter(r => r.month && r.year);
-    // Cập nhật rows
+      const values = parts.slice(1, 1 + shareholders.length).map(v => parseFloat(v) || 0);
+      if (!isNaN(month) && !isNaN(year)) newRows.push({ month, year, values });
+    }
+    // render
     const tbody = document.querySelector("#contributionTable tbody");
     tbody.innerHTML = "";
     newRows.forEach(r => {
       const tr = createRow(r.month, r.year);
       const inputs = tr.querySelectorAll("input[type='number']");
-      r.values.forEach((v, i) => (inputs[i].value = v));
+      r.values.forEach((v, idx) => {
+        if (inputs[idx]) inputs[idx].value = v;
+      });
       tbody.appendChild(tr);
     });
     calculateAll();
+    await saveData();
     document.getElementById("importModal").style.display = "none";
+    showToast("✅ Import CSV thành công");
   };
   reader.readAsText(file);
 }
 
+// ====== UI helpers ======
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
 // ====== Events ======
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   // Load theme
   if (localStorage.getItem('theme') === 'light') {
     document.body.classList.add('light-mode');
-    document.getElementById("themeToggle").innerHTML = '<i class="fas fa-sun"></i> Chế Độ';
+    const t = document.getElementById("themeToggle");
+    if (t) t.innerHTML = '<i class="fas fa-sun"></i> Chế Độ';
   }
 
   updateHeader();
   updateYearHeader();
-  loadData();
 
-  if (document.querySelector("#contributionTable tbody tr") == null) {
+  // load data from Firestore (or create default)
+  await loadData();
+
+  // if no row exist ensure one row
+  const tbodyEl = document.querySelector("#contributionTable tbody");
+  if (!tbodyEl.querySelector("tr")) {
     const cur = getCurrentMonthYear();
-    document
-      .querySelector("#contributionTable tbody")
-      .appendChild(createRow(cur.month, cur.year));
+    tbodyEl.appendChild(createRow(cur.month, cur.year));
   }
 
-  document.getElementById("addMonthBtn").addEventListener("click", addRow);
-  document.getElementById("calcBtn").addEventListener("click", calculateAll);
-  document.getElementById("exportBtn").addEventListener("click", exportCSV);
-  document.getElementById("importBtn").addEventListener("click", () => {
+  // Buttons
+  const addMonthBtn = document.getElementById("addMonthBtn");
+  if (addMonthBtn) addMonthBtn.addEventListener("click", addRow);
+
+  const calcBtn = document.getElementById("calcBtn");
+  if (calcBtn) calcBtn.addEventListener("click", () => { calculateAll(); saveData(); });
+
+  const exportBtn = document.getElementById("exportBtn");
+  if (exportBtn) exportBtn.addEventListener("click", exportCSV);
+
+  const importBtn = document.getElementById("importBtn");
+  if (importBtn) importBtn.addEventListener("click", () => {
     document.getElementById("importModal").style.display = "flex";
   });
-  document.getElementById("resetBtn").addEventListener("click", () => {
+
+  const resetBtn = document.getElementById("resetBtn");
+  if (resetBtn) resetBtn.addEventListener("click", async () => {
     if (confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu?")) {
-      localStorage.removeItem("shareData");
-      location.reload();
+      shareholders = ["Người 1", "Người 2", "Người 3"];
+      document.querySelector("#contributionTable tbody").innerHTML = "";
+      const cur = getCurrentMonthYear();
+      document.querySelector("#contributionTable tbody").appendChild(createRow(cur.month, cur.year));
+      document.querySelector("#yearSummary tbody").innerHTML = "";
+      updateHeader();
+      updateYearHeader();
+      await saveData();
+      showToast("🗑️ Đã xóa toàn bộ và reset dữ liệu trên Firestore");
     }
   });
 
-  // Import OK
-  document.getElementById("importOk").addEventListener("click", () => {
+  // Import modal actions
+  const importOk = document.getElementById("importOk");
+  if (importOk) importOk.addEventListener("click", () => {
     const file = document.getElementById("csvFile").files[0];
     if (file) importCSV(file);
   });
-  document.getElementById("importCancel").addEventListener("click", () => {
+  const importCancel = document.getElementById("importCancel");
+  if (importCancel) importCancel.addEventListener("click", () => {
     document.getElementById("importModal").style.display = "none";
   });
 
-  // Theme Toggle
-  document.getElementById("themeToggle").addEventListener("click", () => {
-    document.body.classList.toggle('light-mode');
-    const isLight = document.body.classList.contains('light-mode');
-    document.getElementById("themeToggle").innerHTML = isLight ? '<i class="fas fa-sun"></i> Chế Độ' : '<i class="fas fa-moon"></i> Chế Độ';
-    localStorage.setItem('theme', isLight ? 'light' : 'dark');
-    // Cập nhật charts nếu tồn tại
-    if (pieChart || barChart || lineChart) calculateAll();
-  });
-
-  document.getElementById("addShareholderBtn").addEventListener("click", () => {
+  // Add shareholder
+  const addShareholderBtn = document.getElementById("addShareholderBtn");
+  if (addShareholderBtn) addShareholderBtn.addEventListener("click", () => {
     const name = prompt("Tên cổ đông mới:");
     if (name && name.trim() !== "") {
       shareholders.push(name.trim());
@@ -367,32 +490,47 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.querySelector("#contributionTable").addEventListener("input", (e) => {
-    if (e.target.type === "number") calculateAll();
-  });
-
-  document.querySelector("#contributionTable").addEventListener("click", (e) => {
-    if (e.target.closest(".delete")) {
-      e.target.closest("tr").remove();
-      calculateAll();
-    }
-  });
-
-  // Tìm kiếm
-  document.getElementById("searchInput").addEventListener("input", (e) => {
-    const term = e.target.value.toLowerCase();
-    document.querySelectorAll("#contributionTable tbody tr").forEach(tr => {
-      const text = tr.textContent.toLowerCase();
-      tr.style.display = text.includes(term) ? "" : "none";
+  // Table input change -> recalc & save
+  const contributionTable = document.getElementById("contributionTable");
+  if (contributionTable) {
+    contributionTable.addEventListener("input", (e) => {
+      if (e.target && e.target.type === "number") {
+        calculateAll();
+        // small debounce for saving
+        clearTimeout(contributionTable._saveT);
+        contributionTable._saveT = setTimeout(() => saveData(), 500);
+      }
     });
-  });
 
-  // Double-click đổi tên cổ đông
+    // delete row
+    contributionTable.addEventListener("click", (e) => {
+      if (e.target.closest(".delete")) {
+        e.target.closest("tr").remove();
+        calculateAll();
+        saveData();
+      }
+    });
+  }
+
+  // Search
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      const term = e.target.value.toLowerCase();
+      document.querySelectorAll("#contributionTable tbody tr").forEach(tr => {
+        const text = tr.textContent.toLowerCase();
+        tr.style.display = text.includes(term) ? "" : "none";
+      });
+    });
+  }
+
+  // Double-click rename shareholder (delegated)
   let renameIndex = null;
   document.addEventListener("dblclick", (e) => {
-    if (e.target.classList.contains("shareholder-name")) {
-      renameIndex = e.target.dataset.index;
-      document.getElementById("renameInput").value = shareholders[renameIndex];
+    const th = e.target.closest(".shareholder-name");
+    if (th) {
+      renameIndex = Number(th.dataset.index);
+      document.getElementById("renameInput").value = shareholders[renameIndex] || "";
       document.getElementById("renameModal").style.display = "flex";
       document.getElementById("renameInput").focus();
     }
@@ -400,12 +538,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("renameOk").addEventListener("click", () => {
     const newName = document.getElementById("renameInput").value.trim();
-    if (newName) {
+    if (newName && renameIndex !== null) {
       shareholders[renameIndex] = newName;
-      saveData();
       updateHeader();
       updateYearHeader();
       calculateAll();
+      saveData();
     }
     document.getElementById("renameModal").style.display = "none";
   });
@@ -414,17 +552,29 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("renameModal").style.display = "none";
   });
 
+  // Close modals on outside click
   window.addEventListener("click", (e) => {
     const modals = document.querySelectorAll(".modal");
     modals.forEach(modal => {
-      if (e.target === modal) {
-        modal.style.display = "none";
-      }
+      if (e.target === modal) modal.style.display = "none";
     });
   });
 
-  // Toggle sidebar trên mobile
-  document.querySelector(".menu-toggle").addEventListener("click", () => {
-    document.querySelector(".sidebar").classList.toggle("active");
+  // Theme Toggle
+  const themeToggle = document.getElementById("themeToggle");
+  if (themeToggle) themeToggle.addEventListener("click", () => {
+    document.body.classList.toggle('light-mode');
+    const isLight = document.body.classList.contains('light-mode');
+    themeToggle.innerHTML = isLight ? '<i class="fas fa-sun"></i> Chế Độ' : '<i class="fas fa-moon"></i> Chế Độ';
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    if (pieChart || barChart || lineChart) calculateAll();
   });
+
+  // Mobile menu toggle
+  const menuToggle = document.querySelector(".menu-toggle");
+  if (menuToggle) {
+    menuToggle.addEventListener("click", () => {
+      document.querySelector(".sidebar").classList.toggle("active");
+    });
+  }
 });

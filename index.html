@@ -49,7 +49,7 @@
           <input type="text" id="searchInput" placeholder="Tìm kiếm năm/tháng/cổ đông...">
         </section>
         <section class="tables">
-          <h2>Bảng đóng góp (USDT)</h2>
+          <h2>Bảng đóng góp</h2>
           <div class="table-container">
             <table id="contributionTable">
               <thead>
@@ -118,6 +118,10 @@
       </div>
     </div>
 
-    <script src="script.js"></script>
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- load script as module (Firebase imports inside) -->
+    <script type="module" src="script.js"></script>
   </body>
 </html>
